@@ -215,14 +215,14 @@ Each failure mode exits with its own code, so CI can branch on the outcome
 (for example, retrying a network failure but not a budget breach). Every
 non-zero code still means "the run failed", so `$? -ne 0` checks keep working.
 
-| Code | Meaning                                                                 |
-| ---- | ----------------------------------------------------------------------- |
-| `0`  | Success (and every `--check` limit passed)                              |
-| `1`  | Generic failure (build failure, unexpected I/O, …)                      |
-| `3`  | Config error (e.g. malformed or incomplete `budget.toml`)               |
-| `4`  | Budget exceeded — a `--check` limit was breached                        |
-| `5`  | Regression beyond the configured tolerance against a baseline           |
-| `6`  | Network / infrastructure failure — results unreliable, retrying is safe |
+| Code | Meaning                                                                                     |
+| ---- | ------------------------------------------------------------------------------------------- |
+| `0`  | Success (and every `--check` limit passed)                                                  |
+| `1`  | Generic failure (build failure, unexpected I/O, or a deterministic `--validate` mismatch — do not retry) |
+| `3`  | Config error (e.g. malformed or incomplete `budget.toml`)                                   |
+| `4`  | Budget exceeded — a `--check` limit was breached                                            |
+| `5`  | Regression beyond the configured tolerance against a baseline                               |
+| `6`  | Network / infrastructure failure (RPC error, simulation produced no metrics — results unreliable, retrying is safe; `--validate` mismatches are code `1`, not `6`) |
 
 Code `2` is reserved for `clap` argument-parse errors. The codes are defined in
 `cargo-budget-report/src/error.rs` and pinned by the process-level tests in
