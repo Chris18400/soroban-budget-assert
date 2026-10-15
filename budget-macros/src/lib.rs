@@ -453,6 +453,13 @@ impl Parse for BudgetLimit {
 impl Parse for BudgetSpec {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let mut spec = BudgetSpec::default();
+        // The span of the whole `key = value, …` list, used when no single
+        // token is at fault (no `cpu`/`mem` limit at all).
+        let args_span = input.span();
+        // Spans of the baseline keys, used when a baseline has no matching
+        // limit — the key the user wrote is the offending token.
+        let mut cpu_baseline_span: Option<Span> = None;
+        let mut mem_baseline_span: Option<Span> = None;
 
         while !input.is_empty() {
             let ident: Ident = input.parse()?;
@@ -466,8 +473,10 @@ impl Parse for BudgetSpec {
             } else if ident_str == "mem" {
                 spec.mem = Some(input.parse()?);
             } else if ident_str == "cpu_baseline" {
+                cpu_baseline_span = Some(ident.span());
                 spec.cpu_baseline = Some(input.parse()?);
             } else if ident_str == "mem_baseline" {
+                mem_baseline_span = Some(ident.span());
                 spec.mem_baseline = Some(input.parse()?);
             } else {
                 return Err(syn::Error::new(
@@ -483,7 +492,7 @@ impl Parse for BudgetSpec {
 
         if spec.cpu.is_none() && spec.mem.is_none() {
             return Err(syn::Error::new(
-                proc_macro2::Span::call_site(),
+                args_span,
                 "must provide at least one of `cpu` or `mem` limits",
             ));
         }
@@ -493,13 +502,13 @@ impl Parse for BudgetSpec {
         // than let the assertion quietly not exist.
         if spec.cpu_baseline.is_some() && spec.cpu.is_none() {
             return Err(syn::Error::new(
-                proc_macro2::Span::call_site(),
+                cpu_baseline_span.unwrap_or(args_span),
                 "`cpu_baseline` requires a `cpu` limit",
             ));
         }
         if spec.mem_baseline.is_some() && spec.mem.is_none() {
             return Err(syn::Error::new(
-                proc_macro2::Span::call_site(),
+                mem_baseline_span.unwrap_or(args_span),
                 "`mem_baseline` requires a `mem` limit",
             ));
         }
@@ -853,8 +862,8 @@ fn generate_metric_assert(
 /// read/write breakdown so a breach is never ambiguous about which side blew the
 /// budget.
 ///
-/// `ContractCostType` is referenced unqualified, so it must be in scope at the
-/// call site (e.g. `use soroban_sdk::ContractCostType;`).
+/// `ContractCostType` is referenced through its fully-qualified SDK path, so
+/// the call site needs no import for it.
 fn generate_ledger_assert(
     cost_ident: &proc_macro2::Ident,
     env_ident: &proc_macro2::Ident,
@@ -862,10 +871,10 @@ fn generate_ledger_assert(
     baseline: Option<&Expr>,
 ) -> proc_macro2::TokenStream {
     let read_entries = quote! {
-        #env_ident.cost_estimate().budget().tracker(ContractCostType::DiskReadEntries).iterations()
+        #env_ident.cost_estimate().budget().tracker(soroban_sdk::testutils::budget::ContractCostType::DiskReadEntries).iterations()
     };
     let write_entries = quote! {
-        #env_ident.cost_estimate().budget().tracker(ContractCostType::DiskWriteEntries).iterations()
+        #env_ident.cost_estimate().budget().tracker(soroban_sdk::testutils::budget::ContractCostType::DiskWriteEntries).iterations()
     };
     match baseline {
         None => quote! {
@@ -1514,9 +1523,10 @@ pub fn budget_events_lt(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// budget. Read and write are deliberately summed rather than silently picked:
 /// the macro reports both.
 ///
-/// Counts come from `env.cost_estimate().budget().tracker(ContractCostType::DiskReadEntries)`
-/// and `…DiskWriteEntries`, summed. `ContractCostType` must be in scope at the
-/// call site (e.g. `use soroban_sdk::ContractCostType;`).
+/// Counts come from `env.cost_estimate().budget().tracker(…DiskReadEntries)`
+/// and `…DiskWriteEntries`, summed. The macro qualifies the SDK path itself
+/// (`soroban_sdk::testutils::budget::ContractCostType`), so no
+/// `ContractCostType` import is needed at the call site.
 ///
 /// Supports the same limit forms as the other macros.
 ///

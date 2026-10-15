@@ -8,16 +8,18 @@
 //! tracker reads; the body does not repeat that tracker chain just to exercise
 //! the assertion, which is what previously duplicated a tracker read per case.
 //!
-//! `ContractCostType` stays imported even though no body names it directly: the
-//! attribute expands to
-//! `budget.tracker(ContractCostType::Disk{Read,Write}Entries).iterations()`, so
-//! removing the import would break the expansion this file exists to check.
+//! No `ContractCostType` import is needed: the attribute expands to the
+//! fully-qualified
+//! `soroban_sdk::testutils::budget::ContractCostType::Disk{Read,Write}Entries`
+//! path, resolved here through the `soroban_sdk` shim re-exported by the mock
+//! (mirroring the real SDK layout). Removing the `soroban_sdk` import below
+//! would break the expansion this file exists to check.
 
 #[path = "../support/mock_env.rs"]
 mod mock_env;
 
 use budget_macros::budget_ledger_entries_lt;
-use mock_env::{budget_panic, ContractCostType, Env};
+use mock_env::{budget_panic, Env, soroban_sdk};
 
 const READ_ENTRIES: u64 = 3;
 const WRITE_ENTRIES: u64 = 4;
