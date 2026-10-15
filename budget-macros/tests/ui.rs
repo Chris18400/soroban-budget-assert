@@ -55,6 +55,9 @@ fn fixture_and_snapshot(name: &str) -> (String, String) {
 
 #[test]
 fn ui_tests() {
+    std::env::set_var("UI_TEST_INVALID_BUDGET", "not-a-u64");
+    std::env::set_var("UI_TEST_MAX_CPU", "1000");
+    std::env::set_var("UI_TEST_MAX_CPU_EXCEEDED", "1000");
     let t = trybuild::TestCases::new();
     t.compile_fail("tests/ui/*.rs");
     t.pass("tests/ui/pass/*.rs");

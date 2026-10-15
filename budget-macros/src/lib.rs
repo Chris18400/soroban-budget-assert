@@ -184,7 +184,8 @@ fn peeks_limit_source_key(input: ParseStream) -> bool {
 /// Accepted forms:
 /// - An integer literal (e.g. `950_000`).
 /// - `env = "VAR_NAME"` to read the limit from a process environment
-///   variable at test time.
+///   variable at macro-expansion time. The variable must be set and contain a
+///   valid `u64`, or compilation fails with a diagnostic naming the variable.
 /// - `config = "key"` to read the limit from `budget.json` in the
 ///   process working directory.
 /// - `env_file = "PATH"` paired with `env = "VAR_NAME"`: read the limit
@@ -508,6 +509,24 @@ impl Parse for BudgetSpec {
     }
 }
 
+fn validate_env_vars(limit: &BudgetLimit) -> syn::Result<()> {
+    match limit {
+        BudgetLimit::EnvVar(var) => match std::env::var(var) {
+            Ok(value) if value.parse::<u64>().is_ok() => Ok(()),
+            Ok(value) => Err(syn::Error::new(
+                Span::call_site(),
+                format!("env var `{var}` has value {value:?}, which is not a valid u64"),
+            )),
+            Err(_) => Err(syn::Error::new(
+                Span::call_site(),
+                format!("env var `{var}` is not set at macro-expansion time"),
+            )),
+        },
+        BudgetLimit::Percentage { of, .. } => validate_env_vars(of),
+        _ => Ok(()),
+    }
+}
+
 fn generate_limit_expr(limit: &BudgetLimit, metric_label: &str) -> proc_macro2::TokenStream {
     match limit {
         BudgetLimit::Int(n) => quote! { #n },
@@ -521,7 +540,13 @@ fn generate_limit_expr(limit: &BudgetLimit, metric_label: &str) -> proc_macro2::
                         s
                     )
                 }))
-                .unwrap_or(u64::MAX)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "{}: env var {} is not set",
+                        #metric_label,
+                        #var
+                    )
+                })
         },
         BudgetLimit::Config(key) => quote! {
             std::fs::read_to_string(std::path::Path::new("budget.json"))
@@ -1130,6 +1155,12 @@ fn generate_prelude() -> proc_macro2::TokenStream {
 }
 
 fn generate_budget_assert(spec: BudgetSpec, mut input_fn: ItemFn, fn_label: &str) -> TokenStream {
+    for limit in [&spec.cpu, &spec.mem].into_iter().flatten() {
+        if let Err(error) = validate_env_vars(limit) {
+            return TokenStream::from(error.to_compile_error());
+        }
+    }
+
     let env_ident = spec
         .env_ident
         .unwrap_or_else(|| proc_macro2::Ident::new("env", proc_macro2::Span::call_site()));
@@ -1227,7 +1258,8 @@ fn generate_budget_assert(spec: BudgetSpec, mut input_fn: ItemFn, fn_label: &str
 ///
 /// ## Dynamic Limit via Environment Variable (`env = "VAR_NAME"`)
 ///
-/// Read the limit dynamically from an environment variable at test runtime:
+/// Read the limit from an environment variable available when the macro
+/// expands:
 ///
 /// ```rust,ignore
 /// use budget_macros::budget_cpu_lt;
@@ -1242,10 +1274,10 @@ fn generate_budget_assert(spec: BudgetSpec, mut input_fn: ItemFn, fn_label: &str
 /// ```
 ///
 /// When using `env = "VAR_NAME"`:
-/// - If the environment variable is **unset**, the limit defaults to `u64::MAX` ("no limit"),
-///   allowing the test assertion to pass unconditionally.
+/// - If the environment variable is **unset**, compilation fails with an error
+///   naming the variable; it never becomes an implicit "no limit".
 /// - If the environment variable is set to a string that **cannot be parsed as a `u64`**,
-///   the test panics at runtime with an explicit error naming the variable and invalid value.
+///   compilation fails with an error naming the variable and invalid value.
 ///
 /// ## Limit from a `.env` File (`env_file = "PATH"` + `env = "VAR_NAME"`)
 ///
@@ -1309,6 +1341,10 @@ fn generate_bytes_proxy_assert(
     metric_phrase: &str,
     fn_label: &str,
 ) -> TokenStream {
+    if let Err(error) = validate_env_vars(&spec.limit) {
+        return TokenStream::from(error.to_compile_error());
+    }
+
     let limit_expr = generate_limit_expr(&spec.limit, metric_label);
 
     let env_ident = proc_macro2::Ident::new("env", proc_macro2::Span::call_site());
@@ -1472,6 +1508,10 @@ pub fn budget_events_lt(attr: TokenStream, item: TokenStream) -> TokenStream {
         Err(e) => return TokenStream::from(e.to_compile_error()),
     };
 
+    if let Err(error) = validate_env_vars(&spec.limit) {
+        return TokenStream::from(error.to_compile_error());
+    }
+
     let limit_expr = generate_limit_expr(&spec.limit, "budget_events_lt");
 
     let env_ident = proc_macro2::Ident::new("env", proc_macro2::Span::call_site());
@@ -1533,6 +1573,10 @@ pub fn budget_ledger_entries_lt(attr: TokenStream, item: TokenStream) -> TokenSt
         Err(e) => return TokenStream::from(e.to_compile_error()),
     };
 
+    if let Err(error) = validate_env_vars(&spec.limit) {
+        return TokenStream::from(error.to_compile_error());
+    }
+
     let limit_expr = generate_limit_expr(&spec.limit, "budget_ledger_entries_lt");
 
     let env_ident = proc_macro2::Ident::new("env", proc_macro2::Span::call_site());
@@ -1592,7 +1636,8 @@ pub fn budget_ledger_entries_lt(attr: TokenStream, item: TokenStream) -> TokenSt
 ///
 /// ## Dynamic Limit via Environment Variable (`env = "VAR_NAME"`)
 ///
-/// Read the limit dynamically from an environment variable at test runtime:
+/// Read the limit from an environment variable available while the macro
+/// expands:
 ///
 /// ```rust,ignore
 /// use budget_macros::budget_mem_lt;
@@ -1608,6 +1653,9 @@ pub fn budget_ledger_entries_lt(attr: TokenStream, item: TokenStream) -> TokenSt
 /// ```
 ///
 /// When using `env = "VAR_NAME"`:
+/// - The variable must be set while the macro expands and contain a valid `u64`.
+///   An unset or unparseable variable is a compile-time error rather than an
+///   implicit unlimited assertion.
 /// ## Limit from a `.env` File (`env_file = "PATH"` + `env = "VAR_NAME"`)
 ///
 /// Same as the `budget_cpu_lt` form: the limit is read at test runtime from
@@ -1615,10 +1663,10 @@ pub fn budget_ledger_entries_lt(attr: TokenStream, item: TokenStream) -> TokenSt
 /// the project `README.md` for the derivation workflow.
 ///
 /// When using `env = "VAR_NAME"` (no `env_file`):
-/// - If the environment variable is **unset**, the limit defaults to `u64::MAX` ("no limit"),
-///   allowing the test assertion to pass unconditionally.
+/// - If the environment variable is **unset**, compilation fails with an error
+///   naming the variable; it never becomes an implicit "no limit".
 /// - If the environment variable is set to a string that **cannot be parsed as a `u64`**,
-///   the test panics at runtime with an explicit error naming the variable and invalid value.
+///   compilation fails with an error naming the variable and invalid value.
 #[proc_macro_attribute]
 pub fn budget_mem_lt(attr: TokenStream, item: TokenStream) -> TokenStream {
     let spec = match syn::parse2::<StandaloneSpec>(attr.into()) {
