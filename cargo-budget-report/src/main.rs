@@ -606,13 +606,13 @@ fn color_enabled_with(
     no_color_env_set: bool,
     stdout_is_terminal: bool,
 ) -> bool {
-    if no_color_env_set || !stdout_is_terminal {
+    if no_color_env_set {
         return false;
     }
     match choice {
         ColorChoice::Always => true,
         ColorChoice::Never => false,
-        ColorChoice::Auto => true,
+        ColorChoice::Auto => stdout_is_terminal,
     }
 }
 
@@ -1017,14 +1017,27 @@ pub(crate) fn resolve_tolerance(
 /// Decide the exit code from the run's boolean outcomes.
 ///
 /// Precedence (most actionable first): regression beyond tolerance beats a
-/// budget-exceeded result, which beats a network/infrastructure fault. A
+/// budget-exceeded result, which beats a deterministic `--validate`
+/// decode mismatch, which beats a network/infrastructure fault. A
 /// regression is a real signal that should block a PR, whereas a network
 /// fault is safe to retry, so surfacing the regression wins when both occur.
-fn classify_outcome(has_regressions: bool, budget_exceeded: bool, network_failure: bool) -> i32 {
+/// A validation mismatch is deterministic and reproducible — retrying the
+/// same inputs reproduces it — so it maps to the generic (non-retryable)
+/// failure code, never to the network code. Callers must pass
+/// `--validate` disagreements as `validation_failed`, not as
+/// `network_failure`.
+fn classify_outcome(
+    has_regressions: bool,
+    budget_exceeded: bool,
+    validation_failed: bool,
+    network_failure: bool,
+) -> i32 {
     if has_regressions {
         EXIT_REGRESSION
     } else if budget_exceeded {
         EXIT_BUDGET_EXCEEDED
+    } else if validation_failed {
+        crate::error::EXIT_GENERIC_FAILURE
     } else if network_failure {
         EXIT_NETWORK_FAILURE
     } else {
@@ -2356,6 +2369,56 @@ fn run() -> Result<i32> {
                 Error::Message(format!("failed to write HTML report to {html_path}: {e}"))
             })?;
         }
+        // Honour the requested stdout format even when nothing was measured:
+        // `--json` emits the versioned envelope (empty `snapshots`, or the
+        // `--check` failure stubs when present) instead of a zero-byte file,
+        // and `--csv` emits at least the header row. `--markdown` renders the
+        // header/footer shell. The HTML file above is unchanged.
+        if args.csv {
+            let mut csv_writer = csv::Writer::from_writer(std::io::stdout());
+            if args.check {
+                csv_writer
+                    .write_record(["package", "function", "metric", "value", "limit", "pass"])
+                    .context("Failed to write CSV header")?;
+                for report in &reports {
+                    let value_str = report.value.map(|val| val.to_string()).unwrap_or_default();
+                    let limit_str = report.limit.map(|lim| lim.to_string()).unwrap_or_default();
+                    let pass_str = report.pass.map(|p| p.to_string()).unwrap_or_default();
+                    csv_writer
+                        .write_record([
+                            report.package.as_str(),
+                            report.function.as_str(),
+                            report.metric,
+                            value_str.as_str(),
+                            limit_str.as_str(),
+                            pass_str.as_str(),
+                        ])
+                        .context("Failed to write CSV record")?;
+                }
+            } else {
+                csv_writer
+                    .write_record(["package", "function", "metric", "value"])
+                    .context("Failed to write CSV header")?;
+                for report in &reports {
+                    if report.value.is_some() {
+                        let value_str = report.value.map(|val| val.to_string()).unwrap_or_default();
+                        csv_writer
+                            .write_record([
+                                report.package.as_str(),
+                                report.function.as_str(),
+                                report.metric,
+                                value_str.as_str(),
+                            ])
+                            .context("Failed to write CSV record")?;
+                    }
+                }
+            }
+            csv_writer.flush().context("Failed to flush CSV writer")?;
+        } else if args.json {
+            println!("{}", json_output::render_json(&reports));
+        } else if args.markdown {
+            print!("{}", markdown::render_markdown(&reports));
+        }
         if !args.quiet {
             eprintln!("No successful simulations to report.");
         }
@@ -2363,7 +2426,8 @@ fn run() -> Result<i32> {
             return Ok(classify_outcome(
                 false,
                 args.check && checks_failed,
-                has_errors || validation_failed,
+                validation_failed,
+                has_errors,
             ));
         }
         return Ok(EXIT_SUCCESS);
@@ -2415,7 +2479,47 @@ fn run() -> Result<i32> {
             let render_opts = RenderOptions {
                 hide_unchanged: args.hide_unchanged,
             };
-            if args.json {
+            if args.csv {
+                let mut csv_writer = csv::Writer::from_writer(std::io::stdout());
+                csv_writer
+                    .write_record([
+                        "package",
+                        "function",
+                        "metric",
+                        "baseline",
+                        "current",
+                        "tolerance",
+                        "verdict",
+                    ])
+                    .context("Failed to write CSV header")?;
+                for func in &report.compared {
+                    for m in &func.metrics {
+                        if render_opts.hide_unchanged && m.is_unchanged() {
+                            continue;
+                        }
+                        let verdict = match m.verdict {
+                            compare::Verdict::Regression => "regression",
+                            compare::Verdict::Improvement => "improvement",
+                            compare::Verdict::Pass => "pass",
+                        };
+                        let baseline_str = m.baseline.to_string();
+                        let current_str = m.current.to_string();
+                        let tolerance_str = m.tolerance.value.to_string();
+                        csv_writer
+                            .write_record([
+                                func.package.as_str(),
+                                func.function.as_str(),
+                                m.metric.label(),
+                                baseline_str.as_str(),
+                                current_str.as_str(),
+                                tolerance_str.as_str(),
+                                verdict,
+                            ])
+                            .context("Failed to write CSV record")?;
+                    }
+                }
+                csv_writer.flush().context("Failed to flush CSV writer")?;
+            } else if args.json {
                 let json = render_check_report_json(&report, default_tolerance);
                 println!(
                     "{}",
@@ -2560,14 +2664,15 @@ fn run() -> Result<i32> {
         }
     }
     // PR #195: `--check` exits non-zero when any limit was breached so CI can
-    // gate on the result. Network/infrastructure failures (simulations that
-    // never produced metrics, `--validate` decode failures) also exit
-    // non-zero with their own code so a CI job can retry instead of treating
-    // them as a real budget/regression failure.
+    // gate on the result. Simulations that never produced metrics exit with
+    // the network/infrastructure code (retryable); deterministic `--validate`
+    // decode mismatches exit with the generic code (non-retryable, do not
+    // retry) so a CI job can tell them apart.
     Ok(classify_outcome(
         false,
         args.check && checks_failed,
-        has_errors || validation_failed,
+        validation_failed,
+        has_errors,
     ))
 }
 
@@ -3686,12 +3791,14 @@ write_limit = 1000
         assert!(!color_enabled_with(Auto, false, false));
         assert!(!color_enabled_with(Auto, true, true));
         assert!(!color_enabled_with(Auto, true, false));
-        // Explicit colour still cannot override NO_COLOR or non-terminal
-        // suppression.
+        // Explicit colour still cannot override NO_COLOR suppression, but
+        // `Always` does force colour into pipes and files.
         assert!(!color_enabled_with(Always, true, false));
         assert!(!color_enabled_with(Always, true, true));
         assert!(color_enabled_with(Always, false, true));
+        assert!(color_enabled_with(Always, false, false));
         assert!(!color_enabled_with(Never, false, true));
+        assert!(!color_enabled_with(Never, false, false));
     }
 
     #[test]
@@ -3955,25 +4062,56 @@ write_limit = 1000
 
     #[test]
     fn classify_outcome_success_when_nothing_failed() {
-        assert_eq!(classify_outcome(false, false, false), EXIT_SUCCESS);
+        assert_eq!(classify_outcome(false, false, false, false), EXIT_SUCCESS);
     }
 
     #[test]
     fn classify_outcome_regression_takes_precedence() {
         // A regression is the strongest signal; it wins even when a budget
         // limit also failed and the network was flaky.
-        assert_eq!(classify_outcome(true, true, true), EXIT_REGRESSION);
+        assert_eq!(classify_outcome(true, true, true, true), EXIT_REGRESSION);
     }
 
     #[test]
     fn classify_outcome_budget_before_network() {
-        assert_eq!(classify_outcome(false, true, true), EXIT_BUDGET_EXCEEDED);
-        assert_eq!(classify_outcome(false, true, false), EXIT_BUDGET_EXCEEDED);
+        assert_eq!(
+            classify_outcome(false, true, false, true),
+            EXIT_BUDGET_EXCEEDED
+        );
+        assert_eq!(
+            classify_outcome(false, true, false, false),
+            EXIT_BUDGET_EXCEEDED
+        );
     }
 
     #[test]
     fn classify_outcome_network_only() {
-        assert_eq!(classify_outcome(false, false, true), EXIT_NETWORK_FAILURE);
+        assert_eq!(
+            classify_outcome(false, false, false, true),
+            EXIT_NETWORK_FAILURE
+        );
+    }
+
+    #[test]
+    fn classify_outcome_validation_mismatch_is_generic_not_network() {
+        // A deterministic `--validate` decode mismatch is reproducible, so
+        // retrying is pointless: it maps to the generic (non-retryable)
+        // code, never to the network code.
+        assert_eq!(
+            classify_outcome(false, false, true, false),
+            crate::error::EXIT_GENERIC_FAILURE
+        );
+        // ... and it still beats a simultaneous transient network fault.
+        assert_eq!(
+            classify_outcome(false, false, true, true),
+            crate::error::EXIT_GENERIC_FAILURE
+        );
+        // Budget and regression findings stay more actionable than it.
+        assert_eq!(
+            classify_outcome(false, true, true, true),
+            EXIT_BUDGET_EXCEEDED
+        );
+        assert_eq!(classify_outcome(true, false, true, true), EXIT_REGRESSION);
     }
 
     #[test]
