@@ -419,27 +419,7 @@ impl Parse for BudgetLimit {
                     var_name: var,
                 })
             }
-            (None, Some(var), None) => {
-                match std::env::var(&var) {
-                    Ok(value) => {
-                        if value.parse::<u64>().is_err() {
-                            return Err(syn::Error::new(
-                                env_span.unwrap_or_else(Span::call_site),
-                                format!(
-                                    "env var `{var}` has value {value:?}, which is not a valid u64"
-                                ),
-                            ));
-                        }
-                    }
-                    Err(_) => {
-                        return Err(syn::Error::new(
-                            env_span.unwrap_or_else(Span::call_site),
-                            format!("env var `{var}` is not set at macro-expansion time"),
-                        ));
-                    }
-                }
-                Ok(BudgetLimit::EnvVar(var))
-            }
+            (None, Some(var), None) => Ok(BudgetLimit::EnvVar(var)),
             (None, None, Some(key)) => Ok(BudgetLimit::Config(key)),
             (Some(_), None, None) => Err(syn::Error::new(
                 env_file_span.unwrap_or_else(Span::call_site),
@@ -526,6 +506,24 @@ impl Parse for BudgetSpec {
         }
 
         Ok(spec)
+    }
+}
+
+fn validate_env_vars(limit: &BudgetLimit) -> syn::Result<()> {
+    match limit {
+        BudgetLimit::EnvVar(var) => match std::env::var(var) {
+            Ok(value) if value.parse::<u64>().is_ok() => Ok(()),
+            Ok(value) => Err(syn::Error::new(
+                Span::call_site(),
+                format!("env var `{var}` has value {value:?}, which is not a valid u64"),
+            )),
+            Err(_) => Err(syn::Error::new(
+                Span::call_site(),
+                format!("env var `{var}` is not set at macro-expansion time"),
+            )),
+        },
+        BudgetLimit::Percentage { of, .. } => validate_env_vars(of),
+        _ => Ok(()),
     }
 }
 
@@ -1157,6 +1155,12 @@ fn generate_prelude() -> proc_macro2::TokenStream {
 }
 
 fn generate_budget_assert(spec: BudgetSpec, mut input_fn: ItemFn, fn_label: &str) -> TokenStream {
+    for limit in [&spec.cpu, &spec.mem].into_iter().flatten() {
+        if let Err(error) = validate_env_vars(limit) {
+            return TokenStream::from(error.to_compile_error());
+        }
+    }
+
     let env_ident = spec
         .env_ident
         .unwrap_or_else(|| proc_macro2::Ident::new("env", proc_macro2::Span::call_site()));
@@ -1337,6 +1341,10 @@ fn generate_bytes_proxy_assert(
     metric_phrase: &str,
     fn_label: &str,
 ) -> TokenStream {
+    if let Err(error) = validate_env_vars(&spec.limit) {
+        return TokenStream::from(error.to_compile_error());
+    }
+
     let limit_expr = generate_limit_expr(&spec.limit, metric_label);
 
     let env_ident = proc_macro2::Ident::new("env", proc_macro2::Span::call_site());
@@ -1500,6 +1508,10 @@ pub fn budget_events_lt(attr: TokenStream, item: TokenStream) -> TokenStream {
         Err(e) => return TokenStream::from(e.to_compile_error()),
     };
 
+    if let Err(error) = validate_env_vars(&spec.limit) {
+        return TokenStream::from(error.to_compile_error());
+    }
+
     let limit_expr = generate_limit_expr(&spec.limit, "budget_events_lt");
 
     let env_ident = proc_macro2::Ident::new("env", proc_macro2::Span::call_site());
@@ -1560,6 +1572,10 @@ pub fn budget_ledger_entries_lt(attr: TokenStream, item: TokenStream) -> TokenSt
         Ok(f) => f,
         Err(e) => return TokenStream::from(e.to_compile_error()),
     };
+
+    if let Err(error) = validate_env_vars(&spec.limit) {
+        return TokenStream::from(error.to_compile_error());
+    }
 
     let limit_expr = generate_limit_expr(&spec.limit, "budget_ledger_entries_lt");
 

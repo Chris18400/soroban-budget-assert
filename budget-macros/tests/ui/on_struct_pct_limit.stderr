@@ -1,5 +1,5 @@
-error: env var `SOME_NETWORK_LIMIT` is not set at macro-expansion time
- --> tests/ui/on_struct_pct_limit.rs:6:32
+error: expected `fn`
+ --> tests/ui/on_struct_pct_limit.rs:7:1
   |
-6 | #[budget_cpu_lt(pct = 50, of = env = "SOME_NETWORK_LIMIT")]
-  |                                ^^^
+7 | struct NotAFunction;
+  | ^^^^^^
