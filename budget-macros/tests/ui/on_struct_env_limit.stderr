@@ -1,5 +1,5 @@
-error: expected `fn`
- --> tests/ui/on_struct_env_limit.rs:8:1
+error: env var `SOME_LIMIT` is not set at macro-expansion time
+ --> tests/ui/on_struct_env_limit.rs:7:17
   |
-8 | struct NotAFunction;
-  | ^^^^^^
+7 | #[budget_cpu_lt(env = "SOME_LIMIT")]
+  |                 ^^^

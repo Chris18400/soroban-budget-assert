@@ -1,0 +1,5 @@
+error: env var `UI_TEST_INVALID_BUDGET` has value "not-a-u64", which is not a valid u64
+ --> tests/ui/env_var_invalid.rs:3:17
+  |
+3 | #[budget_cpu_lt(env = "UI_TEST_INVALID_BUDGET")]
+  |                 ^^^
