@@ -795,7 +795,15 @@ pub(crate) fn format_with_commas_and_units(value: u64, metric: &str) -> String {
 /// Returns an error if the RPC response contains an `"error"` field, if
 /// `transactionData` is missing or not a string, or if the base64 XDR
 /// cannot be decoded.
+#[allow(dead_code)]
 fn extract_metrics(rpc_response: &serde_json::Value) -> Result<(u32, u32, u32)> {
+    let (instructions, read_bytes, write_bytes, _) = extract_metrics_with_memory(rpc_response)?;
+    Ok((instructions, read_bytes, write_bytes))
+}
+
+fn extract_metrics_with_memory(
+    rpc_response: &serde_json::Value,
+) -> Result<(u32, u32, u32, Option<u32>)> {
     if let Some(error) = rpc_response.get("error") {
         return Err(Error::Rpc(error.to_string()));
     }
@@ -818,6 +826,22 @@ fn extract_metrics(rpc_response: &serde_json::Value) -> Result<(u32, u32, u32)> 
     let tx_data = SorobanTransactionData::from_xdr_base64(tx_data_b64, Limits::none())
         .map_err(|e| Error::Xdr(format!("Failed to decode SorobanTransactionData: {}", e)))?;
 
+    let memory_bytes = rpc_response
+        .get("result")
+        .and_then(|result| result.get("cost"))
+        .and_then(|cost| cost.get("memBytes"))
+        .map(|value| {
+            value
+                .as_u64()
+                .or_else(|| value.as_str().and_then(|s| s.parse::<u64>().ok()))
+                .ok_or_else(|| Error::Message("result.cost.memBytes must be an integer".into()))
+                .and_then(|value| {
+                    u32::try_from(value)
+                        .map_err(|_| Error::Message("result.cost.memBytes exceeds u32::MAX".into()))
+                })
+        })
+        .transpose()?;
+
     Ok((
         tx_data.resources.instructions,
         // Renamed in Protocol 23 XDR: footprint reads that hit disk-backed
@@ -825,6 +849,7 @@ fn extract_metrics(rpc_response: &serde_json::Value) -> Result<(u32, u32, u32)> 
         // as read bytes. This is the field the report's "Read Bytes" now tracks.
         tx_data.resources.disk_read_bytes,
         tx_data.resources.write_bytes,
+        memory_bytes,
     ))
 }
 
@@ -961,13 +986,16 @@ fn simulate_function(
         .as_str()
         .map(|s| s.to_string());
 
-    match extract_metrics(&rpc_resp) {
-        Ok((instructions, read_bytes, write_bytes)) => Ok(SimulationOutcome::Metrics {
-            instructions,
-            read_bytes,
-            write_bytes,
-            transaction_data_xdr: tx_data_xdr_b64.unwrap_or_default(),
-        }),
+    match extract_metrics_with_memory(&rpc_resp) {
+        Ok((instructions, read_bytes, write_bytes, memory_bytes)) => {
+            Ok(SimulationOutcome::Metrics {
+                instructions,
+                read_bytes,
+                write_bytes,
+                memory_bytes,
+                transaction_data_xdr: tx_data_xdr_b64.unwrap_or_default(),
+            })
+        }
         Err(err) => Ok(SimulationOutcome::Failed(
             SimulationFailure::MetricsExtraction(format!("{:#}", err)),
         )),
@@ -1759,6 +1787,17 @@ fn run() -> Result<i32> {
             .or(toml_config.source.clone())
             .context("missing --source or budget.toml source field")?;
         network_guard::ensure_deploy_allowed(&network, args.allow_mainnet)?;
+        let watch_override = match (&args.rpc_url, &args.network_passphrase) {
+            (Some(rpc_url), Some(passphrase)) => Some(live::NetworkOverride {
+                rpc_url: rpc_url.clone(),
+                network_passphrase: passphrase.clone(),
+            }),
+            _ => None,
+        };
+        let endpoint = live::resolve_rpc_url(&network, watch_override.as_ref())?;
+        if !args.quiet {
+            eprintln!("Using RPC endpoint {}", endpoint);
+        }
         return watch::watch_loop(
             &args,
             metadata,
@@ -1805,7 +1844,9 @@ fn run() -> Result<i32> {
         }
     }
 
+    let endpoint = live::resolve_rpc_url(&network, net_override.as_ref())?;
     if !args.quiet {
+        eprintln!("Using RPC endpoint {}", endpoint);
         eprintln!("Discovering workspace members...");
     }
     let metadata = MetadataCommand::new()
@@ -2171,6 +2212,7 @@ fn run() -> Result<i32> {
                     instructions,
                     read_bytes,
                     write_bytes,
+                    memory_bytes,
                     transaction_data_xdr,
                 }) => {
                     // Record the measurement for baseline/snapshot mode. This
@@ -2205,6 +2247,22 @@ fn run() -> Result<i32> {
                             function: function.clone(),
                             metric,
                             value: Some(value),
+                            limit: entry_limit,
+                            pass,
+                        });
+                    }
+                    if let Some(memory_bytes) = memory_bytes {
+                        let metric = "Memory Bytes";
+                        let limit = func_config.and_then(|cfg| limit_for_metric(cfg, metric));
+                        let (entry_limit, pass) = evaluate_check(memory_bytes, limit);
+                        if pass == Some(false) {
+                            checks_failed = true;
+                        }
+                        reports.push(CostReport {
+                            package: contract.package_name.clone(),
+                            function: function.clone(),
+                            metric,
+                            value: Some(memory_bytes),
                             limit: entry_limit,
                             pass,
                         });
@@ -2902,11 +2960,42 @@ mod tests {
         assert_eq!(meta["network"].as_str(), Some("testnet"));
         assert!(meta["protocol_version"].as_u64().is_some());
 
-        let (instructions, read_bytes, write_bytes) =
-            extract_metrics(&fixture_json).expect("extraction from fixture should succeed");
+        let (instructions, read_bytes, write_bytes, memory_bytes) =
+            extract_metrics_with_memory(&fixture_json)
+                .expect("extraction from fixture should succeed");
         assert_eq!(instructions, FIXTURE_INSTRUCTIONS);
         assert_eq!(read_bytes, FIXTURE_READ_BYTES);
         assert_eq!(write_bytes, FIXTURE_WRITE_BYTES);
+        assert_eq!(memory_bytes, Some(16_384));
+    }
+
+    #[test]
+    fn extract_metrics_accepts_integer_memory_bytes() {
+        let mut rpc_json = fixture_rpc_response_json();
+        rpc_json["result"]["cost"]["memBytes"] = serde_json::json!(16_384);
+
+        let (_, _, _, memory_bytes) =
+            extract_metrics_with_memory(&rpc_json).expect("integer memBytes should parse");
+        assert_eq!(memory_bytes, Some(16_384));
+    }
+
+    #[test]
+    fn extract_metrics_rejects_unparseable_memory_bytes() {
+        let mut rpc_json = fixture_rpc_response_json();
+        rpc_json["result"]["cost"]["memBytes"] = serde_json::json!("not-a-number");
+
+        assert!(
+            extract_metrics_with_memory(&rpc_json).is_err(),
+            "invalid memBytes must not become zero"
+        );
+    }
+
+    #[test]
+    fn extract_metrics_omits_missing_memory_bytes() {
+        let rpc_json = fixture_rpc_response_json();
+        let (_, _, _, memory_bytes) =
+            extract_metrics_with_memory(&rpc_json).expect("missing cost should be supported");
+        assert_eq!(memory_bytes, None);
     }
 
     #[test]
