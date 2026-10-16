@@ -1315,6 +1315,15 @@ fn generate_budget_assert(spec: BudgetSpec, mut input_fn: ItemFn, fn_label: &str
 /// - If the key is missing, the test panics with both the file path and the key.
 /// - If the value cannot be parsed as `u64`, the test panics with the raw value.
 ///
+/// ## Percentage Limit (`pct = N, of = env_file = "PATH", env = "KEY"`)
+///
+/// The limit resolves at test time as `reference * pct / 100` with integer
+/// arithmetic (multiply first, then divide, truncating any fraction). A
+/// percentage limit is therefore only meaningful when the reference exceeds
+/// `100 / pct`: with a smaller reference the expression resolves to zero, so
+/// the assertion becomes `cost < 0`, which always fails (e.g. `pct = 1` of a
+/// `50`-unit reference resolves to limit `0`).
+///
 /// Read the companion workflow in the project `README.md` (section
 /// "Deriving Tier A limits from a Tier B report") for how to populate
 /// `tier-a-limits.env`.
