@@ -1274,8 +1274,10 @@ Read bytes cost (memory proxy) {marginal} exceeded limit {N} (marginal: {measure
 | `#[budget_mem_lt(N)]` | Memory bytes | `Memory bytes cost` | Yes |
 | `#[budget_write_bytes_lt(N)]` | Write bytes (memory proxy) | `Write bytes cost (memory proxy)` | Yes |
 | `#[budget_read_bytes_lt(N)]` | Read bytes (memory proxy) | `Read bytes cost (memory proxy)` | Yes |
+| `#[budget_events_lt(N)]` | Events emitted | `Event count` | Yes |
+| `#[budget_ledger_entries_lt(N)]` | Ledger entries (reads + writes) | `Ledger entry count` | Yes |
 | `#[budget_lt(N)]` | Both CPU + memory | `CPU instruction cost` or `Memory bytes cost` | Yes |
-| `#[budget_scaling(...)]` | CPU growth model | `{fn} scaling: {model}` | N/A |
+| `#[budget_scaling(...)]` | CPU growth model | `Scaling check failed at size {__curr_s}` | N/A |
 
 All macros accept the same limit sources: integer literal, `env = "VAR"`,
 `env_file = "PATH", env = "VAR"`, or `config = "key"`. The `baseline` parameter
