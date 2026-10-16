@@ -129,6 +129,87 @@ fn missing_env_read_fixture_pins_the_missing_env_error() {
     );
 }
 
+/// Issue #874: `budget_write_bytes_lt` must reject a body with no `env` source.
+#[test]
+fn missing_env_write_fixture_pins_the_missing_env_error() {
+    let (source, snapshot) = fixture_and_snapshot("missing_env_write.rs");
+
+    assert!(
+        source.contains("budget_write_bytes_lt"),
+        "must use the write-bytes macro"
+    );
+    assert!(!source.contains("env ="), "must omit the env source");
+    assert!(!source.contains("env_file"), "must omit an env_file source");
+    assert!(
+        snapshot.contains("budget_write_bytes_lt"),
+        "diagnostic must name the macro"
+    );
+    assert!(
+        snapshot.contains("E0423"),
+        "expected rustc's E0423 for a missing env"
+    );
+}
+
+/// Issue #874: `budget_events_lt` must reject a body with no `env` source.
+#[test]
+fn missing_env_events_fixture_pins_the_missing_env_error() {
+    let (source, snapshot) = fixture_and_snapshot("missing_env_events.rs");
+
+    assert!(
+        source.contains("budget_events_lt"),
+        "must use the events macro"
+    );
+    assert!(!source.contains("env ="), "must omit the env source");
+    assert!(!source.contains("env_file"), "must omit an env_file source");
+    assert!(
+        snapshot.contains("budget_events_lt"),
+        "diagnostic must name the macro"
+    );
+    assert!(
+        snapshot.contains("E0423"),
+        "expected rustc's E0423 for a missing env"
+    );
+}
+
+/// Issue #874: `budget_ledger_entries_lt` must reject a body with no `env` source.
+#[test]
+fn missing_env_ledger_fixture_pins_the_missing_env_error() {
+    let (source, snapshot) = fixture_and_snapshot("missing_env_ledger.rs");
+
+    assert!(
+        source.contains("budget_ledger_entries_lt"),
+        "must use the ledger-entries macro"
+    );
+    assert!(!source.contains("env ="), "must omit the env source");
+    assert!(!source.contains("env_file"), "must omit an env_file source");
+    assert!(
+        snapshot.contains("budget_ledger_entries_lt"),
+        "diagnostic must name the macro"
+    );
+    assert!(
+        snapshot.contains("E0423"),
+        "expected rustc's E0423 for a missing env"
+    );
+}
+
+/// Issue #874: `budget_lt` must reject a body with no `env` source.
+#[test]
+fn missing_env_budget_lt_fixture_pins_the_missing_env_error() {
+    let (source, snapshot) = fixture_and_snapshot("missing_env_budget_lt.rs");
+
+    assert!(source.contains("budget_lt"), "must use the budget_lt macro");
+    assert!(!source.contains("env ="), "must omit the env source");
+    assert!(!source.contains("env_file"), "must omit an env_file source");
+    assert!(
+        snapshot.contains("budget_lt"),
+        "diagnostic must name the macro"
+    );
+    assert!(
+        snapshot.contains("E0423"),
+        "expected rustc's E0423 for a missing env"
+    );
+}
+
 /// Issue #626: percentages outside 1-100 must be rejected at compile time.
 #[test]
 fn pct_out_of_range_fixture_pins_the_range_error() {
