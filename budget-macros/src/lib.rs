@@ -2003,7 +2003,7 @@ pub fn budget_scaling(attr: TokenStream, item: TokenStream) -> TokenStream {
 mod tests {
     use super::{
         expand_targets_inner, resolve_env_file_at_expansion, BudgetLimit, BudgetSpec,
-        ScalingConfig, StandaloneSpec,
+        StandaloneSpec,
     };
     use quote::quote;
     use syn::parse_str;
