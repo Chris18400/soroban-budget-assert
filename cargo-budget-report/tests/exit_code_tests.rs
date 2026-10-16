@@ -75,6 +75,7 @@ const EXIT_SUCCESS: i32 = 0;
 const EXIT_GENERIC_FAILURE: i32 = 1;
 const EXIT_CONFIG_ERROR: i32 = 3;
 const EXIT_BUDGET_EXCEEDED: i32 = 4;
+const EXIT_REGRESSION: i32 = 5;
 const EXIT_NETWORK_FAILURE: i32 = 6;
 
 /// Arguments shared by every invocation in this file.
@@ -265,5 +266,55 @@ fn exit_code_network_failure_when_simulations_produce_no_metrics() {
         "simulations with no metrics should exit 6\nstdout: {}\nstderr: {}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr),
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("No successful simulations to report."),
+        "network failure should explain that no metrics were produced: {stderr}"
+    );
+}
+
+#[test]
+fn exit_code_regression_when_baseline_is_exceeded() {
+    let workspace = setup_mock_workspace();
+    fs::write(
+        workspace.path().join("budget-baseline.toml"),
+        "[\"mock-contract-a::ping\"]\n\
+         cpu_instructions = 100000\n\
+         read_bytes = 2048\n\
+         write_bytes = 4096\n\
+         \n\
+         [\"mock-contract-b::pong\"]\n\
+         cpu_instructions = 1000000\n\
+         read_bytes = 2048\n\
+         write_bytes = 4096\n",
+    )
+    .expect("failed to write baseline");
+
+    let assert = budget_report_cmd(workspace.path())
+        .args(BASE_ARGS)
+        .args(["--check-baseline", "budget-baseline.toml"])
+        .assert();
+    let output = assert.get_output();
+    assert_eq!(
+        output.status.code(),
+        Some(EXIT_REGRESSION),
+        "baseline regression should exit 5\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("regressions: 1"),
+        "regression summary should be human-readable: {stdout}"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Simulating function 'ping'..."),
+        "stderr should retain the simulation progress message: {stderr}"
+    );
+    assert!(
+        !stderr.contains("error:"),
+        "regression should not be reported as a generic error: {stderr}"
     );
 }
