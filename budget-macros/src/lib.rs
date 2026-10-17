@@ -107,12 +107,11 @@ impl Parse for StandaloneSpec {
             ));
         }
         input.parse::<Token![=]>()?;
-let baseline: Expr = input.parse()?;
+        let baseline: Expr = input.parse()?;
 
         // Allow optional trailing comma after `baseline = …`.
         // Consume a comma if present; ignore if absent.
-        if let Ok(_) = input.parse::<Token![,]>() {
-        }
+        let _ = input.parse::<Token![,]>();
 
         if !input.is_empty() {
             return Err(syn::Error::new(
@@ -368,6 +367,8 @@ impl Parse for BudgetLimit {
                             let second_pct_ahead = ahead.fork();
                             // Skip the comma we already consumed, then look for `pct`
                             let _ = second_pct_ahead.parse::<Token![,]>();
+                            // Suppress clippy warning: comparing Ident to string is unavoidable here.
+                            #[allow(clippy::cmp_owned)]
                             if second_pct_ahead.peek(Ident)
                                 && second_pct_ahead.parse::<Ident>().unwrap().to_string() == "pct"
                             {
