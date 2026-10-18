@@ -108,6 +108,36 @@ fn every_pass_fixture_is_a_standalone_program() {
     }
 }
 
+/// Issue #859: the event and ledger-entry macros must have pass fixtures that
+/// *exercise the expansion*, not just fixtures that reject bad arguments.
+///
+/// trybuild's `pass` mode builds each fixture and then runs it, so the
+/// assertions in `run_passing_cases` / `run_failing_cases` are the only place
+/// where a real breach of either macro is observed. These checks keep that
+/// property from eroding: each fixture must still invoke its macro, return a
+/// `main`, drive a panic through `budget_panic`, and assert on the message
+/// text the macro is documented to produce.
+#[test]
+fn event_and_ledger_macros_have_behavioural_pass_fixtures() {
+    let pass_dir = ui_dir().join("pass");
+    for (fixture, macro_name, expected_message) in [
+        ("pass_events.rs", "#[budget_events_lt", "Event count"),
+        (
+            "pass_ledger_entries.rs",
+            "#[budget_ledger_entries_lt",
+            "Ledger entry count (read: ",
+        ),
+    ] {
+        let source = read(&pass_dir.join(fixture));
+        for needle in [macro_name, "fn main", "budget_panic", expected_message] {
+            assert!(
+                source.contains(needle),
+                "{fixture}: must contain {needle:?} so the macro is expanded into code that runs"
+            );
+        }
+    }
+}
+
 /// Issue #627: `budget_read_bytes_lt` must reject a body with no `env` source.
 #[test]
 fn missing_env_read_fixture_pins_the_missing_env_error() {

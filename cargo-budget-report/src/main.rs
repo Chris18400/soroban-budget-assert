@@ -2676,10 +2676,12 @@ fn run() -> Result<i32> {
     } else if args.json {
         println!("{}", json_output::render_json(&reports));
     } else if args.markdown {
+        // `--markdown` emits exactly one document — the GFM table — in every
+        // mode (this path and the `--from` file-read path above). The
+        // machine-readable dump is `--json`'s job; when both flags are given,
+        // `--json` takes priority and only JSON is printed (see the output
+        // precedence in docs/src/reference.md).
         print!("{}", markdown::render_markdown(&reports));
-        let json_output =
-            serde_json::to_string_pretty(&reports).context("Failed to serialize report to JSON")?;
-        println!("{}", json_output);
     } else if let Some(ref html_path) = args.html {
         let content = html_output::render_html(&reports, args.check);
         std::fs::write(html_path, &content).map_err(|e| {

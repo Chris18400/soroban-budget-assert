@@ -98,6 +98,18 @@ fn over_limit_panics() {
     let env = Env::new_full(0, 0, 0, READ_ENTRIES, WRITE_ENTRIES);
 }
 
+/// A read-only breach (reads alone exceed the limit) fails the same check.
+#[budget_ledger_entries_lt(4)]
+fn read_only_over_limit_panics() {
+    let env = Env::new_full(0, 0, 0, 5, 0);
+}
+
+/// A write-only breach (writes alone exceed the limit) fails the same check.
+#[budget_ledger_entries_lt(4)]
+fn write_only_over_limit_panics() {
+    let env = Env::new_full(0, 0, 0, 0, 5);
+}
+
 /// The saturating sum remains bounded when both tracker counts are at `u64::MAX`.
 #[budget_ledger_entries_lt(18_446_744_073_709_551_615)]
 fn saturating_total_panics() {
@@ -140,6 +152,16 @@ fn run_failing_cases() {
         "strictly over limit",
         "Ledger entry count (read: 3, write: 4, total: 7) exceeded limit 5",
         over_limit_panics,
+    );
+    assert_ledger_failure(
+        "read-only breach",
+        "Ledger entry count (read: 5, write: 0, total: 5) exceeded limit 4",
+        read_only_over_limit_panics,
+    );
+    assert_ledger_failure(
+        "write-only breach",
+        "Ledger entry count (read: 0, write: 5, total: 5) exceeded limit 4",
+        write_only_over_limit_panics,
     );
     assert_ledger_failure(
         "early return",
