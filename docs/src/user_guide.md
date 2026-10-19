@@ -110,7 +110,7 @@ Two details matter:
 - **`reset_unlimited()` before the call**, so the default test budget doesn't cap the measurement.
 {% endhint %}
 
-Re-measure (Steps 3–4) whenever you change the release profile or bump the SDK — both shift local and network costs, and not by the same amount. A useful follow-up for the tool would be to warn when a workspace lacks the release profile above; this guide only documents the requirement.
+Re-measure (Steps 3–4) whenever you change the release profile or bump the SDK — both shift local and network costs, and not by the same amount. Before building or measuring, `cargo budget-report` warns on stderr about missing or different release-profile settings; pass `--quiet` to suppress the warning.
 
 ## Step 5: Block regressions in CI
 

@@ -1258,11 +1258,120 @@ fn scaffold_init(force: bool, quiet: bool) -> Result<()> {
     Ok(())
 }
 
+/// Return every measured release-profile setting that differs from the
+/// workspace manifest. The values here must stay aligned with the profile
+/// documented in the README and reference guide.
+fn release_profile_deviations(manifest: &str) -> std::result::Result<Vec<String>, toml::de::Error> {
+    let manifest: toml::Value = toml::from_str(manifest)?;
+    let release = manifest
+        .get("profile")
+        .and_then(|profile| profile.get("release"));
+    let expected = [
+        ("opt-level", toml::Value::String("z".into())),
+        ("lto", toml::Value::Boolean(true)),
+        ("codegen-units", toml::Value::Integer(1)),
+        ("panic", toml::Value::String("abort".into())),
+        ("strip", toml::Value::String("symbols".into())),
+        ("debug", toml::Value::Integer(0)),
+        ("debug-assertions", toml::Value::Boolean(false)),
+        ("overflow-checks", toml::Value::Boolean(true)),
+    ];
+
+    Ok(expected
+        .into_iter()
+        .filter_map(|(key, expected_value)| {
+            let actual = release.and_then(|profile| profile.get(key));
+            (actual != Some(&expected_value)).then(|| match actual {
+                Some(actual) => format!("{key}: expected {expected_value}, found {actual}"),
+                None => format!("{key}: expected {expected_value}, but it is not set"),
+            })
+        })
+        .collect())
+}
+
+/// Warn about release-profile differences without making preflight fail.
+fn warn_release_profile_deviations(quiet: bool) {
+    if quiet {
+        return;
+    }
+
+    let Ok(metadata) = MetadataCommand::new().no_deps().exec() else {
+        return;
+    };
+    let manifest_path = PathBuf::from(metadata.workspace_root.as_str()).join("Cargo.toml");
+    let Ok(manifest) = std::fs::read_to_string(&manifest_path) else {
+        return;
+    };
+    let Ok(deviations) = release_profile_deviations(&manifest) else {
+        return;
+    };
+
+    if !deviations.is_empty() {
+        eprintln!("Warning: workspace release profile differs from measured settings:");
+        for deviation in deviations {
+            eprintln!("  - {deviation}");
+        }
+        eprintln!("See the documented [profile.release] settings for comparable measurements.");
+    }
+}
+
+#[cfg(test)]
+mod release_profile_tests {
+    use super::release_profile_deviations;
+
+    #[test]
+    fn measured_release_profile_has_no_deviations() {
+        let manifest = include_str!("../tests/fixtures/release_profile/matching.toml");
+        assert!(release_profile_deviations(manifest).unwrap().is_empty());
+    }
+
+    #[test]
+    fn deviating_release_profile_lists_each_mismatch() {
+        let manifest = include_str!("../tests/fixtures/release_profile/deviating.toml");
+        let deviations = release_profile_deviations(manifest).unwrap();
+
+        assert_eq!(deviations.len(), 8);
+        for key in [
+            "opt-level",
+            "lto",
+            "codegen-units",
+            "panic",
+            "strip",
+            "debug",
+            "debug-assertions",
+            "overflow-checks",
+        ] {
+            assert!(deviations
+                .iter()
+                .any(|deviation| deviation.starts_with(key)));
+        }
+    }
+
+    #[test]
+    fn partial_release_profile_reports_only_missing_and_deviating_settings() {
+        let manifest = include_str!("../tests/fixtures/release_profile/partial.toml");
+        let deviations = release_profile_deviations(manifest).unwrap();
+
+        assert_eq!(deviations.len(), 7);
+        assert!(!deviations
+            .iter()
+            .any(|deviation| deviation.starts_with("opt-level")));
+        assert!(!deviations
+            .iter()
+            .any(|deviation| deviation.starts_with("lto")));
+        assert!(deviations
+            .iter()
+            .any(|deviation| deviation == "codegen-units: expected 1, but it is not set"));
+    }
+}
+
 /// Run environment preflight checks before building or deploying.
 ///
 /// Each check fails fast with an actionable error message. Checks that are
 /// not applicable (e.g. rustup not installed) are silently skipped.
 fn run_preflight_checks(quiet: bool, source_secret: Option<&str>) -> Result<()> {
+    warn_release_profile_deviations(quiet);
+
     // ── source signing key (#123) ──────────────────────────────────────
     // The chosen mechanism for a signing key that doesn't depend on the
     // `stellar` CLI key store is `--source-secret` / `STELLAR_SECRET_KEY`
