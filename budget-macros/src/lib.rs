@@ -1208,7 +1208,9 @@ fn generate_prelude() -> proc_macro2::TokenStream {
                 if trimmed.is_empty() || trimmed.starts_with('#') {
                     continue;
                 }
-                let (lhs, rhs) = trimmed.split_once('=')?;
+                let Some((lhs, rhs)) = trimmed.split_once('=') else {
+                    continue;
+                };
                 if lhs.trim() == key {
                     let raw = rhs.trim();
                     // Strip inline comments ("  # provenance") that
