@@ -290,6 +290,12 @@ impl Parse for BudgetLimit {
             input.parse::<Token![=]>()?;
             let ident_str = ident.to_string();
             if ident_str == "env_file" {
+                if env_file.is_some() {
+                    return Err(syn::Error::new(
+                        ident.span(),
+                        "`env_file` cannot be specified more than once",
+                    ));
+                }
                 env_file_span = Some(ident.span());
                 // Accept either a string literal or an identifier/const path
                 // for env_file, so callers can write `env_file = "path"` or
@@ -397,10 +403,22 @@ impl Parse for BudgetLimit {
                 let lit: LitStr = input.parse()?;
                 match ident_str.as_str() {
                     "env" => {
+                        if env_var.is_some() {
+                            return Err(syn::Error::new(
+                                ident.span(),
+                                "`env` cannot be specified more than once",
+                            ));
+                        }
                         env_span = Some(ident.span());
                         env_var = Some(lit.value())
                     }
                     "config" => {
+                        if config_key.is_some() {
+                            return Err(syn::Error::new(
+                                ident.span(),
+                                "`config` cannot be specified more than once",
+                            ));
+                        }
                         config_span = Some(ident.span());
                         config_key = Some(lit.value())
                     }
