@@ -773,7 +773,7 @@ initial_backoff_secs = 2
 
 - `network`, `source` — defaults for the corresponding CLI flags.
 - `[functions.<name>].args` — arguments injected when simulating that exported function. Functions without an entry are simulated with no arguments; if a required argument is missing, the simulation fails with a warning and that function is skipped.
-- `[functions.<name>].cpu_limit`, `.read_limit`, `.write_limit` — inclusive upper bounds for simulated CPU instructions, read bytes, and write bytes. Enforced only when `--check` is passed. A missing field means "not enforced" for that metric.
+- `[functions.<name>].cpu_limit`, `.mem_limit`, `.read_limit`, `.write_limit` — inclusive upper bounds for simulated CPU instructions, memory bytes, read bytes, and write bytes. Enforced only when `--check` is passed. A missing field means "not enforced" for that metric.
 
 ### `[retry]`: transient-failure retry policy
 
@@ -956,12 +956,13 @@ Where a value can come from more than one place, this is the exact order the res
 
 ### `functions.<name>`: per-function configuration
 
-The section key `<name>` must match the **exported WASM function name exactly** (case-sensitive). Names are not package-qualified: if two contracts export the same function name, the single entry applies to both simulations.
+The section key `<name>` must match the **exported WASM function name exactly** (case-sensitive), or be package-qualified using the quoted `[functions."<package>::<function>"]` syntax. A package-qualified entry takes precedence over a bare entry. A bare entry serves as a fallback when exactly one measured package exports that function. If multiple measured packages export the same function name and only a bare entry is provided, `cargo-budget-report` fails with a configuration error (exit code 3) to prevent ambiguous configuration across packages.
 
 | Field | Type | Required | Default | Effect |
 |---|---|---|---|---|
 | `args` | array of strings | no | `[]` | Forwarded verbatim after the `--` separator to `stellar contract invoke -- <fn> <args>`. Functions without an entry are simulated with no arguments. |
 | `cpu_limit` | integer (u64) | no | none | Inclusive upper bound on the measured `CPU Instructions` metric in `--check` mode. |
+| `mem_limit` | integer (u64) | no | none | Inclusive upper bound on `Memory Bytes` in `--check` mode. |
 | `read_limit` | integer (u64) | no | none | Inclusive upper bound on `Read Bytes`. |
 | `write_limit` | integer (u64) | no | none | Inclusive upper bound on `Write Bytes`. |
 | `tolerance` | number (fraction) | no | global tolerance | Per-function regression-tolerance override applied during `--check-baseline`. Takes precedence over `--tolerance`. |
@@ -983,7 +984,7 @@ Simulation is driven by what the workspace *exports*, not by what the file decla
 3. Config entries are then looked up by name. Consequences:
    - An entry for a function absent from every package's exports aborts the run during validation with a `did you mean` suggestion (see [budget.toml schema validation](#budgettoml-schema-validation)).
    - A package cannot be "listed" in `budget.toml` at all — there is no per-package section. Packages are discovered from `cargo metadata`, and removing or renaming a package needs no config change; renaming an exported *function*, however, orphans its entry silently.
-   - Because entries are keyed by bare function name, one entry fans out to every package exporting that name.
+   - Function entries can be package-qualified (`[functions."<package>::<function>"]`) or flat (`[functions.<function>]`). A qualified entry takes precedence. When a flat entry would apply to a function exported by multiple measured packages, the run fails with a configuration error (exit code 3) requiring package qualification.
 
 ### `margin`: deriving Tier A limits
 
