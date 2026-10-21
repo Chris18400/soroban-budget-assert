@@ -755,6 +755,8 @@ const BUDGET_ATTR_NAMES: &[&str] = &[
     "budget_mem_lt",
     "budget_write_bytes_lt",
     "budget_read_bytes_lt",
+    "budget_events_lt",
+    "budget_ledger_entries_lt",
     "budget_lt",
     "budget_scaling",
 ];

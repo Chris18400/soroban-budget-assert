@@ -425,7 +425,10 @@ Semantics:
   ceiling" is the motivating case, and a thirteenth added later is asserted
   automatically rather than shipping unbudgeted.
 - **A method with its own `#[budget_*]` attribute is governed by that**, not the
-  block limit — it is never asserted twice. This is also the opt-out: a helper
+  block limit — it is never asserted twice. All eight budget attributes count:
+  `budget_cpu_lt`, `budget_mem_lt`, `budget_write_bytes_lt`,
+  `budget_read_bytes_lt`, `budget_events_lt`, `budget_ledger_entries_lt`,
+  `budget_lt` and `budget_scaling`. This is also the opt-out: a helper
   that should not be budgeted can carry `#[budget_cpu_lt(env = "UNSET")]`, whose
   unset-env limit resolves to "no limit".
 - **A failure names the method** — the panic message carries `` [fn `name`] ``.
@@ -1196,3 +1199,11 @@ The `#[budget_write_bytes_lt(N)]` and `#[budget_read_bytes_lt(N)]` macros are do
 All macros accept the same limit sources: integer literal, `env = "VAR"`,
 `env_file = "PATH", env = "VAR"`, or `config = "key"`. The `baseline` parameter
 is available on all macros except `budget_scaling`.
+
+- A method with its own `#[budget_cpu_lt]`, `#[budget_mem_lt]`, `#[budget_write_bytes_lt]`, `#[budget_read_bytes_lt]`, `#[budget_events_lt]`, `#[budget_ledger_entries_lt]`, or `#[budget_lt]` attribute is governed by that, not the block limit - it is never asserted twice.
+
+- A method with its own `#[budget_cpu_lt]`, `#[budget_mem_lt]`, `#[budget_write_bytes_lt]`, `#[budget_read_bytes_lt]`, `#[budget_events_lt]`, `#[budget_ledger_entries_lt]`, or `#[budget_lt]` attribute is governed by that, not the block limit - it is never asserted twice.
+
+- A method with its own `#[budget_*]` attribute (`budget_cpu_lt`, `budget_mem_lt`, `budget_write_bytes_lt`, `budget_read_bytes_lt`, `budget_events_lt`, `budget_ledger_entries_lt`, `budget_lt`, or `budget_scaling`) is governed by that, not the block limit - it is never asserted twice.
+
+A method with its own `#[budget_*]` attribute (including `#[budget_cpu_lt]`, `#[budget_mem_lt]`, `#[budget_write_bytes_lt]`, `#[budget_read_bytes_lt]`, `#[budget_events_lt]`, `#[budget_ledger_entries_lt]`, or `#[budget_lt]`) is governed by that, not the block limit - it is never asserted twice.
