@@ -334,6 +334,36 @@ and with a baseline:
 Read bytes cost (memory proxy) {marginal} exceeded limit {N} (marginal: {measured} measured - {baseline} baseline) - local estimate, underestimates real network cost
 ```
 
+### `#[budget_events_lt(N)]`
+
+Asserts that the number of events emitted by `env` is strictly less than `N`.
+
+```rust
+use budget_macros::budget_events_lt;
+
+#[test]
+#[budget_events_lt(10)]
+fn test_events_budget() {
+    let env = Env::default();
+    // ...
+}
+```
+
+### `#[budget_ledger_entries_lt(N)]`
+
+Asserts that the total ledger entries read and written by `env` are strictly less than `N`.
+
+```rust
+use budget_macros::budget_ledger_entries_lt;
+
+#[test]
+#[budget_ledger_entries_lt(5)]
+fn test_ledger_entries_budget() {
+    let env = Env::default();
+    // ...
+}
+```
+
 ### `#[budget_scaling(…)]` — growth-model assertion
 
 Asserts that the CPU cost *grows* according to a declared model as input size
