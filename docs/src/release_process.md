@@ -12,8 +12,8 @@ The repository is organized as a Cargo workspace publishing two crates to crates
 
 | Package | Crates.io Name | Role | Release Artifacts |
 |---|---|---|---|
-| `budget-macros` | `budget-macros` | Procedural macro crate (`#[budget_cpu_lt]`, `#[budget_mem_lt]`) | Published to crates.io |
-| `cargo-budget-report` | `cargo-budget-report` | CLI tool and cargo subcommand for resource reporting | Published to crates.io + pre-compiled binaries on GitHub Releases |
+| `budget-macros` | `budget-macros` | Procedural macro crate (`#[budget_cpu_lt]`, `#[budget_mem_lt]`) | Not yet published (requires CARGO_REGISTRY_TOKEN) |
+| `cargo-budget-report` | `cargo-budget-report` | CLI tool and cargo subcommand for resource reporting | Pre-compiled binaries on GitHub Releases only |
 | `soroban-budget-assert-core` | `soroban-budget-assert-core` | Internal core library (workspace root `src/lib.rs`, not published to crates.io, `publish = false`) | Workspace root package |
 | `amm-pool-contract` | `amm-pool-contract` | Benchmark contract fixture (not published, `publish = false`) | Test fixture |
 | `host-function-contract` | `host-function-contract` | Benchmark contract fixture (not published, `publish = false`) | Test fixture |
@@ -135,7 +135,7 @@ Each binary is uploaded as a workflow artifact.
 - Generates `SHA256SUMS` with `sha256sum cargo-budget-report-* > SHA256SUMS`.
 - Creates or updates a GitHub Release for the tag using `softprops/action-gh-release@v3`, attaching all four binaries and the `SHA256SUMS` file.
 
-### 3. `publish` Job (runs after `build`)
+### 3. `publish` Job (runs after `build`) - **PENDING**
 - Validates that the git tag version strictly matches the workspace version in `Cargo.toml`:
   ```bash
   TAG_VERSION="${GITHUB_REF_NAME#v}"
@@ -145,8 +145,10 @@ Each binary is uploaded as a workflow artifact.
     exit 1
   fi
   ```
-- Publishes `budget-macros` to crates.io using the secret `CARGO_REGISTRY_TOKEN`.
-- Publishes `cargo-budget-report` to crates.io using the secret `CARGO_REGISTRY_TOKEN`.
+- **Pending:** Publishes `budget-macros` to crates.io using the secret `CARGO_REGISTRY_TOKEN`.
+- **Pending:** Publishes `cargo-budget-report` to crates.io using the secret `CARGO_REGISTRY_TOKEN`.
+
+> **Note:** The `publish` job requires a `CARGO_REGISTRY_TOKEN` secret configured in the repository settings. Until this secret is added, only GitHub Release binaries are produced. See `.github/workflows/release.yml:113` for the workflow trigger.
 
 ---
 
@@ -162,12 +164,22 @@ After the GitHub Actions workflow finishes:
      sha256sum -c SHA256SUMS
      ```
 
-2. **Verify Crates.io:**
-   - Check `https://crates.io/crates/budget-macros` shows the new version.
-   - Check `https://crates.io/crates/cargo-budget-report` shows the new version.
+2. **Verify Installation from Source or Release:**
+   - Install from source:
+     ```bash
+     git clone https://github.com/Tollcraft/soroban-budget-assert.git
+     cd soroban-budget-assert
+     cargo install --path cargo-budget-report
+     cargo budget-report --version
+     ```
+   - Or download a pre-built binary from the GitHub release and verify it runs.
 
-3. **Verify Installation:**
-   - Install the new version from crates.io:
+3. **Crates.io Publication (Pending):**
+   - Requires `CARGO_REGISTRY_TOKEN` secret configured in repository settings.
+   - Once configured, verify at:
+     - `https://crates.io/crates/budget-macros`
+     - `https://crates.io/crates/cargo-budget-report`
+   - Install from crates.io:
      ```bash
      cargo install cargo-budget-report --version X.Y.Z
      cargo budget-report --version

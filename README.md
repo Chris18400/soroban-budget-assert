@@ -95,17 +95,17 @@ A row marked **Supported** means: every workspace crate builds and passes `cargo
 
 ### 1. Installation
 
-Install from [crates.io](https://crates.io/crates/cargo-budget-report) (recommended):
+**Build from source** (crate not yet published to crates.io):
 
 ```bash
-cargo install cargo-budget-report
-```
-
-Alternatively, build from source:
-
-```bash
+git clone https://github.com/Tollcraft/soroban-budget-assert.git
+cd soroban-budget-assert
 cargo install --path cargo-budget-report
 ```
+
+Alternatively, download pre-built binaries from the [latest GitHub release](https://github.com/Tollcraft/soroban-budget-assert/releases/tag/v0.1.0).
+
+> **Note:** The `cargo-budget-report` crate is not yet published to crates.io. Publication requires a `CARGO_REGISTRY_TOKEN` secret configured in the repository settings and a tag push to trigger the automated release workflow (see `.github/workflows/release.yml`). Until then, use source builds or GitHub releases.
 
 ### 2. Configuration
 
