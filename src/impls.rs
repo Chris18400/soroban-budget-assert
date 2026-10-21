@@ -115,7 +115,7 @@
 /// assert_eq!(cost.cpu_instruction_cost(), 42);
 /// ```
 ///
-/// [`SorobanTransactionData`]: https://docs.rs/stellar-xdr/22.1.0/stellar_xdr/curr/struct.SorobanTransactionData.html
+/// [`SorobanTransactionData`]: https://docs.rs/stellar-xdr/27.0.0/stellar_xdr/curr/struct.SorobanTransactionData.html
 pub trait CpuCost {
     /// Returns the CPU instruction cost.
     ///
@@ -126,7 +126,7 @@ pub trait CpuCost {
     ///
     /// * Local test estimates: `env.cost_estimate().budget().cpu_instruction_cost()`
     /// * Network simulation: the `instructions` field of
-    ///   [`SorobanResources`](https://docs.rs/stellar-xdr/22.1.0/stellar_xdr/curr/struct.SorobanResources.html).
+    ///   [`SorobanResources`](https://docs.rs/stellar-xdr/27.0.0/stellar_xdr/curr/struct.SorobanResources.html).
     ///
     /// # Returns
     ///
@@ -167,7 +167,7 @@ pub trait CpuCost {
 /// assert_eq!(cost.memory_bytes_cost(), 2048);
 /// ```
 ///
-/// [`SorobanTransactionData`]: https://docs.rs/stellar-xdr/22.1.0/stellar_xdr/curr/struct.SorobanTransactionData.html
+/// [`SorobanTransactionData`]: https://docs.rs/stellar-xdr/27.0.0/stellar_xdr/curr/struct.SorobanTransactionData.html
 pub trait MemoryCost {
     /// Returns the memory byte cost.
     ///
@@ -179,7 +179,7 @@ pub trait MemoryCost {
     /// * Local test estimates:
     ///   `env.cost_estimate().budget().memory_bytes_cost()`
     /// * Network simulation: the `read_bytes` or `write_bytes` fields of
-    ///   [`SorobanResources`](https://docs.rs/stellar-xdr/22.1.0/stellar_xdr/curr/struct.SorobanResources.html).
+    ///   [`SorobanResources`](https://docs.rs/stellar-xdr/27.0.0/stellar_xdr/curr/struct.SorobanResources.html).
     ///
     /// # Returns
     ///
