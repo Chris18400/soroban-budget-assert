@@ -33,7 +33,7 @@ fn unit_test() {
 #[budget_cpu_lt(850000)]
 fn result_test() -> Result<(), Box<dyn std::error::Error>> {
     let env = Env::default();
-    let wasm = std::fs::read("../target/wasm32-unknown-unknown/release/my_contract.wasm")?;
+    let wasm = std::fs::read("../target/wasm32v1-none/release/my_contract.wasm")?;
     // ... the check runs after `Ok(())` is evaluated, and it is still the test's value ...
     Ok(())
 }
@@ -67,7 +67,7 @@ fn test_expensive_function() {
     let env = Env::default();
 
     let wasm = std::fs::read(
-        "../target/wasm32-unknown-unknown/release/my_contract.wasm",
+        "../target/wasm32v1-none/release/my_contract.wasm",
     ).expect("build the WASM first");
     let contract_id = env.register_contract_wasm(None, wasm.as_slice());
     let client = MyContractClient::new(&env, &contract_id);
@@ -175,7 +175,7 @@ fn test_memory_budget() {
     let env = Env::default();
 
     let wasm = std::fs::read(
-        "../target/wasm32-unknown-unknown/release/my_contract.wasm",
+        "../target/wasm32v1-none/release/my_contract.wasm",
     ).expect("build the WASM first");
     let contract_id = env.register_contract_wasm(None, wasm.as_slice());
     let client = MyContractClient::new(&env, &contract_id);
@@ -338,6 +338,10 @@ Read bytes cost (memory proxy) {marginal} exceeded limit {N} (marginal: {measure
 
 Asserts that the number of events emitted by `env` is strictly less than `N`.
 
+Event count represents the total number of Soroban contract events emitted during execution. This macro measures the local event list length as a proxy, which correlates with on-network event emission even though the exact network event count is only available via RPC simulation.
+
+**Static limit:**
+
 ```rust
 use budget_macros::budget_events_lt;
 
@@ -349,9 +353,72 @@ fn test_events_budget() {
 }
 ```
 
+**Dynamic limit:**
+
+```rust
+#[test]
+#[budget_events_lt(env = "MAX_EVENTS")]
+fn test_events_with_env_limit() {
+    let env = Env::default();
+    // ...
+}
+```
+
+**Limit from a `.env` file:**
+
+```rust
+#[test]
+#[budget_events_lt(env_file = "../tier-a-limits.env", env = "TIER_A__AMM_POOL_CONTRACT__DEPOSIT__EVENTS")]
+fn test_events_with_env_file() {
+    let env = Env::default();
+    // ...
+}
+```
+
+**Config-driven limit** — read from `budget.json` in the process working directory:
+
+```rust
+#[test]
+#[budget_events_lt(config = "events")]
+fn test_events_with_json_config() {
+    let env = Env::default();
+    // ...
+}
+```
+
+**Baseline subtraction** — `baseline = <expr>` subtracts a fixed floor from the
+measurement before it is compared, so the *marginal* event count is what is
+asserted. The subtraction saturates at 0.
+
+```rust
+#[test]
+#[budget_events_lt(10, baseline = instantiation_floor_events())]
+fn test_marginal_events() {
+    let env = Env::default();
+    // ...
+}
+```
+
+Failure message format:
+```
+Event count {actual} exceeded limit {N} - local estimate, real network event counts may differ
+```
+and with a baseline:
+```
+Event count {marginal} exceeded limit {N} (marginal: {measured} measured - {baseline} baseline) - local estimate, real network event counts may differ
+```
+
 ### `#[budget_ledger_entries_lt(N)]`
 
 Asserts that the total ledger entries read and written by `env` are strictly less than `N`.
+
+Soroban limits the number of ledger entries a transaction may read or write separately from the byte counts. A contract can sit well inside its read and write byte budgets while touching too many distinct entries — reading fifty small entries is cheap in bytes and expensive in entry count.
+
+The total asserted is **reads + writes** (the network enforces a single combined entry limit), but the failure message always reports the read and write breakdown so a breach is never ambiguous about which side blew the budget. Read and write are deliberately summed rather than silently picked: the macro reports both.
+
+Counts come from `env.cost_estimate().budget().tracker(…DiskReadEntries)` and `…DiskWriteEntries`, summed. The macro qualifies the SDK path itself (`soroban_sdk::testutils::budget::ContractCostType`), so no `ContractCostType` import is needed at the call site.
+
+**Static limit:**
 
 ```rust
 use budget_macros::budget_ledger_entries_lt;
@@ -362,6 +429,61 @@ fn test_ledger_entries_budget() {
     let env = Env::default();
     // ...
 }
+```
+
+**Dynamic limit:**
+
+```rust
+#[test]
+#[budget_ledger_entries_lt(env = "MAX_LEDGER_ENTRIES")]
+fn test_ledger_entries_with_env_limit() {
+    let env = Env::default();
+    // ...
+}
+```
+
+**Limit from a `.env` file:**
+
+```rust
+#[test]
+#[budget_ledger_entries_lt(env_file = "../tier-a-limits.env", env = "TIER_A__AMM_POOL_CONTRACT__DEPOSIT__LEDGER_ENTRIES")]
+fn test_ledger_entries_with_env_file() {
+    let env = Env::default();
+    // ...
+}
+```
+
+**Config-driven limit** — read from `budget.json` in the process working directory:
+
+```rust
+#[test]
+#[budget_ledger_entries_lt(config = "ledger_entries")]
+fn test_ledger_entries_with_json_config() {
+    let env = Env::default();
+    // ...
+}
+```
+
+**Baseline subtraction** — `baseline = <expr>` subtracts a fixed floor from the
+measurement before it is compared, so the *marginal* ledger entry count is what
+is asserted. The subtraction saturates at 0.
+
+```rust
+#[test]
+#[budget_ledger_entries_lt(5, baseline = instantiation_floor_ledger_entries())]
+fn test_marginal_ledger_entries() {
+    let env = Env::default();
+    // ...
+}
+```
+
+Failure message format:
+```
+Ledger entry count (read: {reads}, write: {writes}, total: {total}) exceeded limit {N} - local estimate, real network entry counts may differ
+```
+and with a baseline:
+```
+Ledger entry count (read: {reads}, write: {writes}, total: {marginal}) exceeded limit {N} (marginal: {measured} measured - {baseline} baseline) - local estimate, real network entry counts may differ
 ```
 
 ### `#[budget_scaling(…)]` — growth-model assertion
@@ -663,11 +785,11 @@ The real failure mode here is drift, not the one-time gap this page used to have
 
 Configuration precedence: a CLI flag overrides the `budget.toml` value. If neither provides `network`/`source`, the command exits with an error naming the missing field.
 
-External requirements: the `stellar` CLI on `PATH`, a funded source identity on the target network, and the `wasm32-unknown-unknown` Rust target installed. `--replay` is the exception — it needs none of the network tooling (no `stellar`, no `curl`), only the workspace itself.
+External requirements: the `stellar` CLI on `PATH`, a funded source identity on the target network, and the `wasm32v1-none` Rust target installed. `--replay` is the exception — it needs none of the network tooling (no `stellar`, no `curl`), only the workspace itself.
 
 ### Required release profile for comparable measurements
 
-`cargo budget-report` builds each contract with `cargo build --target wasm32-unknown-unknown --release`, so the workspace `[profile.release]` is part of the measured input. To compare against the figures published by this project, use the same profile:
+`cargo budget-report` builds each contract with `cargo build --target wasm32v1-none --release`, so the workspace `[profile.release]` is part of the measured input. To compare against the figures published by this project, use the same profile:
 
 {% code title="Cargo.toml" %}
 ```toml
@@ -880,7 +1002,7 @@ total.### In scope
 | `CPU Instructions` | `resources.instructions` — metered CPU instruction count |
 | `Read Bytes` | `resources.disk_read_bytes` — bytes read from disk-backed ledger entries |
 | `Write Bytes` | `resources.write_bytes` — bytes written to ledger entries |
-| `WASM Bytes` | Compiled WASM binary size — the file size on disk after `cargo build --target wasm32-unknown-unknown --release` |
+| `WASM Bytes` | Compiled WASM binary size — the file size on disk after `cargo build --target wasm32v1-none --release` |
 | `Memory Bytes` (Protocol 22+) | `result.cost.memBytes` — memory-bytes cost from the Protocol 22 JSON-RPC `cost` block; absent on older protocol responses |
 
 These four (or five on Protocol 22+) quantities are *inputs* to the **non-refundable resource fee**. They are not the whole of it.

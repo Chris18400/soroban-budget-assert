@@ -227,8 +227,8 @@ See: https://github.com/stellar/stellar-cli
 ```
 
 ```
-wasm32-unknown-unknown target is not installed.
-Install it with:  rustup target add wasm32-unknown-unknown
+wasm32v1-none target is not installed.
+Install it with:  rustup target add wasm32v1-none
 ```
 
 *(from source, both exact strings.)* These fail immediately with no retry, since no amount of waiting installs a binary.
