@@ -1993,6 +1993,12 @@ fn run() -> Result<i32> {
         }
     }
 
+    // Watch mode needs a tty; refuse before the preflight checks so a CI
+    // invocation gets that explanation rather than a missing-tool error.
+    if args.watch {
+        watch::ensure_terminal()?;
+    }
+
     // ── Preflight environment checks ──────────────────────────────────
     // Replay runs serve every network call from a fixture, so they need
     // neither the `stellar` CLI nor `curl`; skip the checks entirely.
