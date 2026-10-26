@@ -4,6 +4,7 @@
   
   [![Build Status](https://github.com/Tollcraft/soroban-budget-assert/actions/workflows/budget.yml/badge.svg)](https://github.com/Tollcraft/soroban-budget-assert/actions/workflows/budget.yml)
   [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+  [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/Tollcraft/soroban-budget-assert/badge)](https://scorecard.dev/viewer/?uri=github.com/Tollcraft/soroban-budget-assert)
   <p>
     <a href="https://tollcraft.gitbook.io/docs/budget-assert"><strong>Documentation</strong></a> ·
     <a href="https://tollcraft.github.io/soroban-budget-assert/dashboard.html"><strong>Dashboard</strong></a> ·
